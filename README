@@ -1,6 +1,6 @@
 Raspberry Pi media player based on libav.
 
-In order to build raspi_libavplayer from source you need to:
+In order to build raspi_avplayer from source you need to:
 
     Build ilclient located at /opt/vc/src/hello_pi/libs/ilclient
         cd /opt/vc/src/hello_pi/libs/ilclient
@@ -14,7 +14,7 @@ In order to build raspi_libavplayer from source you need to:
         make
 
 Running 
-    ./raspi_libavplayer <input media file or stream>
+    ./raspi_avplayer <input media file or stream>
 
 
 For now the following hot-keys are supported:
