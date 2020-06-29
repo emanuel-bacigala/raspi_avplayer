@@ -133,7 +133,7 @@ if(use_deinterlace)
     OMX_INIT_STRUCTURE(image_format);
     image_format.nPortIndex = 191;
 
-#if 0
+#if 1
     image_format.nNumParams = 1;
     image_format.nParams[0] = 3;  // bolo 3 pre deint
     image_format.eImageFilter = OMX_ImageFilterDeInterlaceLineDouble;  // !!! DEINTERLACE MUSIM ZAPNUT TU ABY TO NETUHLO PRI DEINIT !!!
@@ -150,7 +150,7 @@ if(use_deinterlace)
     image_format.eImageFilter = OMX_ImageFilterAnaglyph;
 #endif
 
-#if 1
+#if 0
     image_format.nNumParams = 4;
     image_format.nParams[0] = 3;
     image_format.nParams[1] = 0;  // default frame interval
