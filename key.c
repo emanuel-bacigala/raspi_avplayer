@@ -2,7 +2,6 @@
 #include <string.h>
 #include <termio.h>
 #include <unistd.h>
-
 #include "key.h"
 
 static int stdin_fileno = -1;
@@ -12,6 +11,7 @@ static struct termios original_state;
 void keyboardInit(void)
 {
     struct termios term_state;
+
 
     if (stdin_fileno == -1)
     {

@@ -1,1 +1,0 @@
-void* handleVideoRenderThread(void *params);

@@ -1,5 +1,5 @@
-OBJS=main_yuv4.o control.o aud_decode.o vid_decode.o vid_render.o cpuload.o fifo.o texturer.o avqueue.o audioplay.o key.o
-BIN=raspi_libavplayer 
+BIN=raspi_avplayer
+OBJS=omx_clock.o omx_audio.o omx_video.o omx_integration.o avqueue.o aud_decode.o vid_decode.o key.o control.o cpuload.o main_yuv4.o
 
 INCLUDES+=-I/opt/vc/include/ -I/opt/vc/include/interface/vcos/pthreads -I/opt/vc/include/interface/vmcs_host/linux 
 INCLUDES+=-I/opt/vc/src/hello_pi/libs/ilclient

@@ -10,14 +10,13 @@
 #include <libavutil/opt.h>
 
 #include "bcm_host.h"
-#include "texturer.h"
+#include "omx_audio.h"
+#include "omx_integration.h"
+
 #include "avqueue.h"
-#include "audioplay.h"
-#include "fifo.h"
 #include "cpuload.h"
 #include "aud_decode.h"
 #include "vid_decode.h"
-#include "vid_render.h"
 #include "control.h"
 #include "appdata.h"
 
@@ -48,13 +47,12 @@ int main(int argc, char **argv)
     appData *userData = (appData*) malloc(sizeof(appData));
     memset(userData, 0, sizeof(appData));
 
-    userData->haveAudio = 0;
-    userData->haveVideo = 0;
+    userData->playerState = 0;
 
     if(argc < 2)
     {
 	printf("%s <inFile or stream>\n", argv[0]);
-	return -1;
+	return 1;
     }
 
 //DEMUXER INIT
@@ -67,14 +65,14 @@ int main(int argc, char **argv)
     if(avformat_open_input(&pFormatCtx, argv[1], NULL, NULL) != 0)
     {
         printf("Error: can't open: %s\n", argv[1]);
-	return -1;
+	return 1;
     }
 
     // Retrieve stream information
     if(avformat_find_stream_info(pFormatCtx, NULL) < 0)
     {
         printf("Error: can't find stream information\n");
-	return -1;
+	return 1;
     }
 
     // Dump information about file onto standard error
@@ -91,15 +89,14 @@ int main(int argc, char **argv)
 	    break;
 	}
 
-    if(videoStream==-1)
+    if(videoStream == -1)
     {
-        printf("Can't find video stream\n");
-	return -1;
+        //printf("Can't find video stream\n");
     }
-
-    userData->videoStream = pFormatCtx->streams[videoStream];
-
-    userData->videoStream->codec->idct_algo = FF_IDCT_SIMPLEARMV6;  // FF_IDCT_SIMPLEARMV6 || FF_IDCT_SIMPLENEON
+    else
+    {
+        userData->videoStream = pFormatCtx->streams[videoStream];
+        userData->videoStream->codec->idct_algo = FF_IDCT_SIMPLEARMV6;  // FF_IDCT_SIMPLEARMV6 || FF_IDCT_SIMPLENEON
 /*
 FF_IDCT_INT            //12.1
 FF_IDCT_SIMPLE         //11.9
@@ -109,31 +106,32 @@ FF_IDCT_SIMPLEARMV5TE  //11.1
 FF_IDCT_SIMPLEARMV6    //10.4
 FF_IDCT_SIMPLENEON     //9.0
 */
-    //userData->videoStream->codec->flags |= (AV_CODEC_FLAG_INTERLACED_DCT | AV_CODEC_FLAG_INTERLACED_ME | AV_CODEC_FLAG_GRAY);
-    //userData->videoStream->codec->flags |= (AV_CODEC_FLAG_LOW_DELAY); |// AV_CODEC_FLAG_INTERLACED_DCT); //| AV_CODEC_FLAG_INTERLACED_ME);  // AV_CODEC_FLAG_GRAY 
+        //userData->videoStream->codec->flags |= (AV_CODEC_FLAG_INTERLACED_DCT | AV_CODEC_FLAG_INTERLACED_ME | AV_CODEC_FLAG_GRAY);
+        //userData->videoStream->codec->flags |= (AV_CODEC_FLAG_LOW_DELAY); |// AV_CODEC_FLAG_INTERLACED_DCT); //| AV_CODEC_FLAG_INTERLACED_ME);  // AV_CODEC_FLAG_GRAY 
 
-    // Find the decoder for the video stream
-    videoCodec = avcodec_find_decoder(userData->videoStream->codec->codec_id);
+        // Find the decoder for the video stream
+        videoCodec = avcodec_find_decoder(userData->videoStream->codec->codec_id);
 
-    if(videoCodec==NULL)
-    {
-	fprintf(stderr, "Unsupported video codec!\n");
-	return -1; // Codec not found
+        if (videoCodec == NULL)
+        {
+	    fprintf(stderr, "Unsupported video codec!\n");
+        }
+        else
+        {
+            printf("Video codec: %s\n", videoCodec->name);
+
+            // Open video codec
+            if(avcodec_open2(userData->videoStream->codec, videoCodec, &optionsDict)<0)
+            {
+                printf("Could not open video codec\n");
+            }
+            else
+            {
+                printf("Video resolution: %dx%d\n", userData->videoStream->codec->width, userData->videoStream->codec->height);
+                userData->playerState |= STATE_HAVEVIDEO;
+            }
+        }
     }
-    else
-    {
-        printf("Video codec: %s\n", videoCodec->name);
-    }
-
-    // Open video codec
-    if(avcodec_open2(userData->videoStream->codec, videoCodec, &optionsDict)<0)
-    {
-        printf("Could not open video codec\n");
-	return -1;
-    }
-
-    printf("Video resolution: %dx%d\n", userData->videoStream->codec->width, userData->videoStream->codec->height);
-
 // Find the first video stream
 
 // Find the first audio stream
@@ -175,49 +173,85 @@ FF_IDCT_SIMPLENEON     //9.0
             else
             {
                 userData->swr = avresample_alloc_context();
-                av_opt_set_int(userData->swr, "in_channel_layout", av_get_default_channel_layout(userData->audioStream->codec->channels), 0);
+                av_opt_set_int(userData->swr, "in_channel_layout",  av_get_default_channel_layout(userData->audioStream->codec->channels), 0);
                 av_opt_set_int(userData->swr, "out_channel_layout", AV_CH_LAYOUT_STEREO, 0);
-                av_opt_set_int(userData->swr, "in_sample_rate",  userData->audioStream->codec->sample_rate, 0);
-                av_opt_set_int(userData->swr, "out_sample_rate", userData->audioStream->codec->sample_rate, 0);
-                av_opt_set_int(userData->swr, "in_sample_fmt",   userData->audioStream->codec->sample_fmt, 0);
+                av_opt_set_int(userData->swr, "in_sample_rate",     userData->audioStream->codec->sample_rate, 0);
+                av_opt_set_int(userData->swr, "out_sample_rate",    userData->audioStream->codec->sample_rate, 0);
+                av_opt_set_int(userData->swr, "in_sample_fmt",      userData->audioStream->codec->sample_fmt, 0);
                 av_opt_set_int(userData->swr, "out_sample_fmt",     AV_SAMPLE_FMT_S16, 0);
                 avresample_open(userData->swr);
 
-                userData->haveAudio = 1;
+                userData->playerState |= STATE_HAVEAUDIO;
             }
         }
     }
 // Find the first audio stream
+
+    if (!(userData->playerState & STATE_HAVEAUDIO || userData->playerState & STATE_HAVEVIDEO))
+    {
+        fprintf(stderr, "%s() - Error: no audio nor video stream found\n", __FUNCTION__);
+
+        // Close the video file
+        avformat_close_input(&pFormatCtx);
+
+        return 1;
+    }
+
+    bcm_host_init();
+
+    // resamplujem na stereo, 16-bit
+    int nchannels = 2;
+    int bitdepth = 16;
+    int buffer_size = (BUFFER_SIZE_SAMPLES * bitdepth * OUT_CHANNELS(nchannels))>>3;
+
+    //userData->playerState |= STATE_DEINTERLACE;
+
+    int ret = omxInit(&userData->omxState,
+              userData->playerState & STATE_HAVEVIDEO ? userData->videoStream->codec->width : 32, // width
+              userData->playerState & STATE_HAVEVIDEO ? userData->videoStream->codec->height: 16, // height
+              12, userData->playerState & STATE_DEINTERLACE, // numBuff, deint [image_fx]
+              0, 0, 1024, 768, 0, // render canvas: x_off, y_off, width, height, disp_num [video_render]
+              userData->playerState & STATE_HAVEAUDIO ? userData->audioStream->codec->sample_rate : 8000,
+              nchannels, bitdepth, 10, buffer_size);  // ,,,num_buffers, [audio_render]
+
+    if (ret)
+    {
+        fprintf(stderr, "%s() - Error: omxInit() failed with error %d\n", __FUNCTION__, ret);
+
+        // Close the codec
+        if (userData->playerState & STATE_HAVEVIDEO)
+            avcodec_close(userData->videoStream->codec);
+
+        if (userData->playerState & STATE_HAVEAUDIO)
+            avcodec_close(userData->audioStream->codec);
+
+        // Close the video file
+        avformat_close_input(&pFormatCtx);
+
+        return 1;
+    }
 
     startCpuLoadDetectionThread();
 
     avpacket_queue_init(&userData->audioPacketFifo);
     avpacket_queue_init(&userData->videoPacketFifo);
 
-    userData->videoParamsSet = 0;
-    userData->exitSignal = 0;
-    userData->fifoSize = RING_BUFFER_SIZE;
-
-    bcm_host_init();
-
-    if (userData->haveAudio)
+    if (userData->playerState & STATE_HAVEAUDIO)
         pthread_create(&userData->audioThreadId, NULL, &handleAudioThread, userData);
-    else
-        userData->audioPts = 0x7FFFFFFFFFFFFFFF;   // max audioPts
 
-    pthread_create(&userData->videoThreadId, NULL, &handleVideoThread, userData);
-    pthread_create(&userData->videoRenderThreadId, NULL, &handleVideoRenderThread, userData);
+    if (userData->playerState & STATE_HAVEVIDEO)
+        pthread_create(&userData->videoThreadId, NULL, &handleVideoThread, userData);
 
     keyboardInit();
 
-    while( av_read_frame(pFormatCtx, &packet) >= 0 )
+    while (av_read_frame(pFormatCtx, &packet) >= 0)
     {
-	if(packet.stream_index == videoStream)
+	if (packet.stream_index == videoStream)
         {
-            if(avpacket_queue_put(&userData->videoPacketFifo, &packet) != 0)
+            if (avpacket_queue_put(&userData->videoPacketFifo, &packet) != 0)
                 goto terminatePlayer;
 	}
-        else if(packet.stream_index == audioStream)
+        else if (packet.stream_index == audioStream)
         {
             if(avpacket_queue_put(&userData->audioPacketFifo, &packet) != 0)
                 goto terminatePlayer;
@@ -228,7 +262,7 @@ FF_IDCT_SIMPLENEON     //9.0
 	    av_free_packet(&packet);
         }
 
-        while (avpacket_queue_size(&userData->videoPacketFifo) > INPUT_QUEUE_SIZE)  // wait is input queue full
+        while (avpacket_queue_size(&userData->videoPacketFifo) > INPUT_QUEUE_SIZE || avpacket_queue_size(&userData->audioPacketFifo) > INPUT_QUEUE_SIZE/2)  // wait if input queue full
         {
             if(checkKeyPress(userData))
                 goto terminatePlayer;
@@ -240,30 +274,24 @@ FF_IDCT_SIMPLENEON     //9.0
             goto terminatePlayer;
     }
 
-    if (userData->exitSignal == 0)
+    printf("Got EOS: V/A queue %u/%u, CPU %5.2f%%\n", avpacket_queue_size(&userData->videoPacketFifo),
+            avpacket_queue_size(&userData->audioPacketFifo), getCpuLoad());
+
+    // if EOS wait for threads to finish
+    while (avpacket_queue_size(&userData->videoPacketFifo) > 0 || avpacket_queue_size(&userData->audioPacketFifo) > 0)
     {
-        printf("Got EOS: V/A queue %u/%u, render %d/%d, CPU %5.2f%%\n", avpacket_queue_size(&userData->videoPacketFifo),
-                avpacket_queue_size(&userData->audioPacketFifo), fifoGetNumElements(), userData->fifoSize, getCpuLoad());
+        usleep(1000*100); // 100ms
 
-        // if EOS wait for threads to finish
-        while (avpacket_queue_size(&userData->videoPacketFifo) > 0 || avpacket_queue_size(&userData->audioPacketFifo) > 0)
-        {
-            usleep(1000*200); // 100ms
-
-            if(checkKeyPress(userData))
-                goto terminatePlayer;
-        }
-
-        if (userData->haveAudio)
-            userData->exitSignal = 1;  // audioThread EOS exit signal
-        else
-            userData->exitSignal = 2;  // videoThread EOS exit signal
-
-        printf("V/A queue %u/%u, render %d/%d, CPU %5.2f%%\n", avpacket_queue_size(&userData->videoPacketFifo),
-                avpacket_queue_size(&userData->audioPacketFifo), fifoGetNumElements(), userData->fifoSize, getCpuLoad());
-
-        printf("exitSignal has been sent to decoding & rendering threads...\n");fflush(stdout);
+        if(checkKeyPress(userData))
+            goto terminatePlayer;
     }
+
+    userData->playerState |= STATE_EXIT;
+
+    printf("V/A queue %u/%u, CPU %5.2f%%\n", avpacket_queue_size(&userData->videoPacketFifo),
+            avpacket_queue_size(&userData->audioPacketFifo), getCpuLoad());
+
+    printf("exitSignal has been sent to decoding & rendering threads...\n");fflush(stdout);
 
     terminatePlayer:
 
@@ -272,27 +300,29 @@ FF_IDCT_SIMPLENEON     //9.0
 
     stopCpuLoadDetectionThread();
 
-    if (userData->haveAudio)
+    if (userData->playerState & STATE_HAVEAUDIO)
         pthread_join(userData->audioThreadId, NULL);
 
-    pthread_join(userData->videoThreadId, NULL);
-    pthread_join(userData->videoRenderThreadId, NULL);
+    if (userData->playerState & STATE_HAVEVIDEO)
+        pthread_join(userData->videoThreadId, NULL);
+
+    // Deinit OMX components
+    //usleep(200*1000);
+    omxDeinit(userData->omxState);
 
     // Release fifo
     avpacket_queue_release(&userData->videoPacketFifo);
     avpacket_queue_release(&userData->audioPacketFifo);
 
     // Close the codec
-    avcodec_close(userData->videoStream->codec);
-
-    if (userData->haveAudio)
+    if (userData->playerState & STATE_HAVEAUDIO)
         avcodec_close(userData->audioStream->codec);
+
+    if (userData->playerState & STATE_HAVEVIDEO)
+        avcodec_close(userData->videoStream->codec);
 
     // Close the video file
     avformat_close_input(&pFormatCtx);
-
-    // Release FIFO
-    fifoRelease();
 
     bcm_host_deinit();
 
