@@ -1,0 +1,34 @@
+Raspberry Pi media player based on libav.
+
+In order to build raspi_avplayer from source you need to:
+
+    Build ilclient located at /opt/vc/src/hello_pi/libs/ilclient
+        cd /opt/vc/src/hello_pi/libs/ilclient
+        sudo make
+
+    Install required libraries: 
+        sudo apt-get update
+        sudo apt-get install libavcodec-dev libavformat-dev libavutil-dev libavresample-dev
+
+    Build raspi_libavplayer
+        make
+
+Running 
+./raspi_avplayer [options] in_file_or_stream
+	--help
+	--deinterlace type 
+		0 - none
+		1 - line double
+		2 - advanced
+		3 - fast
+
+For now the following hot-keys are supported:
+    q               - exit
+    s               - print some statistics
+    space           - pause | resume playing
+    m               - mute | unmute audio
+    +               - increase play speed
+    -               - decrease play speed
+
+
+
