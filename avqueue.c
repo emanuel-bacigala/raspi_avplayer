@@ -8,6 +8,7 @@ void avpacket_queue_init(AVPacketQueue *q)
     //pthread_cond_init(&q->cond, NULL);
 }
 
+
 static void avpacket_queue_flush(AVPacketQueue *q)
 {
     AVPacketList *pkt, *pkt1;
@@ -28,12 +29,14 @@ static void avpacket_queue_flush(AVPacketQueue *q)
     pthread_mutex_unlock(&q->mutex);
 }
 
+
 void avpacket_queue_release(AVPacketQueue *q)
 {
     avpacket_queue_flush(q);
     pthread_mutex_destroy(&q->mutex);
     //pthread_cond_destroy(&q->cond);
 }
+
 
 unsigned int avpacket_queue_size(AVPacketQueue *q)
 {
@@ -45,12 +48,13 @@ unsigned int avpacket_queue_size(AVPacketQueue *q)
     return size;
 }
 
+
 int avpacket_queue_put(AVPacketQueue *q, AVPacket *pkt)
 {
     AVPacketList *pkt1;
 
-    // Drop Packet if queue size is > 20 MB
-    if (avpacket_queue_size(q) >  1024 * 1024 * 20)
+    // Drop Packet if queue size is > 10 MB
+    if (avpacket_queue_size(q) >  1024 * 1024 * 10)
     {
         fprintf(stderr,"%s() - Error: input buffer overrun\n", __func__);
         return -1;
@@ -84,6 +88,7 @@ int avpacket_queue_put(AVPacketQueue *q, AVPacket *pkt)
 
     return 0;
 }
+
 
 int avpacket_queue_get(AVPacketQueue *q, AVPacket *pkt, int block)
 {

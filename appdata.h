@@ -9,7 +9,7 @@
 #include "bcm_host.h"
 #include "avqueue.h"
 
-#define INPUT_QUEUE_SIZE        4000000   // 4MB (max. 20MB set in avqueue.c)
+#define INPUT_QUEUE_SIZE        4000000   // 4MB (max. 10MB set in avqueue.c)
 
 #define STATE_HAVEAUDIO		0x00000001
 #define STATE_HAVEVIDEO		0x00000002
