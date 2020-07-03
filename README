@@ -14,14 +14,21 @@ In order to build raspi_avplayer from source you need to:
         make
 
 Running 
-    ./raspi_avplayer <input media file or stream>
-
+./raspi_avplayer [options] in_file_or_stream
+	--help
+	--deinterlace type 
+		0 - none
+		1 - line double
+		2 - advanced
+		3 - fast
 
 For now the following hot-keys are supported:
     q               - exit
     s               - print some statistics
     space           - pause | resume playing
-    d               - disable deinterlace
-    D               - enable deinterlace
+    m               - mute | unmute audio
     +               - increase play speed
     -               - decrease play speed
+
+
+

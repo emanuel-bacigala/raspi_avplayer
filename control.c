@@ -176,6 +176,7 @@ int checkKeyPress(appData *userData)
                 fprintf(stderr, "%s() - Info: audio off\n", __FUNCTION__);
             }
         }
+/*
         else if (key == 'D')
         {
             videoSetDeinterlace(userData->omxState, 1);
@@ -184,6 +185,7 @@ int checkKeyPress(appData *userData)
         {
             videoSetDeinterlace(userData->omxState, 0);
         }
+*/
     }
 
     return 0;

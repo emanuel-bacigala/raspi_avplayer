@@ -2,6 +2,7 @@
 #include "bcm_host.h"
 #include "ilclient.h"
 #include "omx_video.h"
+#include "dump.h"
 
 
 int setupVideoRender(omxState_t* omxState, uint32_t x_offset, uint32_t y_offset, uint32_t width, uint32_t height, uint32_t disp_num)
@@ -47,7 +48,7 @@ int setupVideoRender(omxState_t* omxState, uint32_t x_offset, uint32_t y_offset,
 }
 
 
-int setupImageFx(omxState_t* omxState, uint32_t frame_width, uint32_t frame_height, uint32_t num_buffers, uint32_t use_deinterlace)
+int setupImageFx(omxState_t* omxState, uint32_t frame_width, uint32_t frame_height, uint32_t num_buffers, uint32_t useFilter)
 {
   // create image_fx
     if(ilclient_create_component(omxState->client, &omxState->image_fx, "image_fx", ILCLIENT_DISABLE_ALL_PORTS | ILCLIENT_ENABLE_INPUT_BUFFERS) != OMX_ErrorNone)
@@ -90,11 +91,41 @@ int setupImageFx(omxState_t* omxState, uint32_t frame_width, uint32_t frame_heig
 
     fprintf(stderr, "%s() - Info: input buffer count=%d\n", __FUNCTION__, portdef.nBufferCountActual);
 
-
     ilclient_change_component_state(omxState->image_fx, OMX_StateIdle);
 
-if(use_deinterlace)
-{
+
+    uint32_t filterList[] = {
+        OMX_ImageFilterNone,
+        OMX_ImageFilterDeInterlaceLineDouble,
+        OMX_ImageFilterDeInterlaceAdvanced,
+        OMX_ImageFilterDeInterlaceFast,
+        OMX_ImageFilterNegative,
+        OMX_ImageFilterOilPaint,
+        OMX_ImageFilterPastel,
+        OMX_ImageFilterPosterise,
+        OMX_ImageFilterCartoon,
+
+        OMX_ImageFilterBlur,
+        OMX_ImageFilterSketch,
+        OMX_ImageFilterWashedOut,
+        OMX_ImageFilterSharpen,
+
+        OMX_ImageFilterNoise,
+        OMX_ImageFilterEmboss,
+        OMX_ImageFilterHatch,
+        OMX_ImageFilterGpen,
+        OMX_ImageFilterAntialias,
+        OMX_ImageFilterDeRing,
+        OMX_ImageFilterSolarize,
+        OMX_ImageFilterWatercolor,
+        OMX_ImageFilterFilm,
+        OMX_ImageFilterSaturation,
+        OMX_ImageFilterColourSwap,
+        OMX_ImageFilterColourPoint,
+        OMX_ImageFilterColourBalance,
+        OMX_ImageFilterAnaglyph
+    };
+
 /*
     // potrebuje len anaglyph a deinterlaceFast
     OMX_PARAM_U32TYPE extra_buffers;
@@ -133,41 +164,35 @@ if(use_deinterlace)
     OMX_INIT_STRUCTURE(image_format);
     image_format.nPortIndex = 191;
 
-#if 1
+#if 0
     image_format.nNumParams = 1;
     image_format.nParams[0] = 3;  // bolo 3 pre deint
     image_format.eImageFilter = OMX_ImageFilterDeInterlaceLineDouble;  // !!! DEINTERLACE MUSIM ZAPNUT TU ABY TO NETUHLO PRI DEINIT !!!
-    //image_format.eImageFilter = OMX_ImageFilterDeInterlaceAdvanced;
-    //image_format.eImageFilter = OMX_ImageFilterNone;
-    //image_format.eImageFilter = OMX_ImageFilterPosterise;
-    //image_format.eImageFilter = OMX_ImageFilterColourSwap;
-    //image_format.eImageFilter = OMX_ImageFilterNegative;
 #endif
 
 #if 0
     image_format.nNumParams = 1;
     image_format.nParams[0] = 1;  // anaglyph z omxplayer
-    image_format.eImageFilter = OMX_ImageFilterAnaglyph;
 #endif
 
-#if 0
+#if 1
     image_format.nNumParams = 4;
     image_format.nParams[0] = 3;
     image_format.nParams[1] = 0;  // default frame interval
     image_format.nParams[2] = 0;  // half framerate
     image_format.nParams[3] = 1;  // use qpus
-    image_format.eImageFilter = OMX_ImageFilterDeInterlaceLineDouble;
-    //image_format.eImageFilter = OMX_ImageFilterDeInterlaceAdvanced;
-    //image_format.eImageFilter = OMX_ImageFilterDeInterlaceFast;
 #endif
+
+    image_format.eImageFilter = filterList[useFilter];
 
     if (OMX_SetConfig(ILC_GET_HANDLE(omxState->image_fx), OMX_IndexConfigCommonImageFilterParameters, &image_format) != OMX_ErrorNone)
     {
         fprintf(stderr, "%s() - Error: OMX_SetParameter(image_fx, OMX_IndexConfigCommonImageFilterParameters)\n", __FUNCTION__);
         return 7;
     }
-// DEINTERLACE zapinaj LEN PRI STARTUP - inak to MOZE zatuhnut pri DEINIT
-}
+
+    fprintf(stderr, "%s() - Info: using filter[%d]: %s\n", __FUNCTION__, useFilter, dump_OMX_IMAGEFILTERTYPE(image_format.eImageFilter));
+
 
     if(ilclient_enable_port_buffers(omxState->image_fx, 190, NULL, NULL, NULL) != OMX_ErrorNone)
     {
@@ -188,6 +213,8 @@ if(use_deinterlace)
 
 int videoSetDeinterlace(omxState_t* omxState, int type)
 {
+    //static int _type = 0;
+
   // s parametrami
     OMX_CONFIG_IMAGEFILTERPARAMSTYPE image_format;
     OMX_INIT_STRUCTURE(image_format);
@@ -198,10 +225,11 @@ int videoSetDeinterlace(omxState_t* omxState, int type)
     image_format.nParams[1] = 0;
     image_format.nParams[2] = 0;
     image_format.nParams[3] = 1;
-    image_format.eImageFilter = type ? /*OMX_ImageFilterNegative*/ OMX_ImageFilterDeInterlaceLineDouble /*OMX_ImageFilterDeInterlaceAdvanced*/ : OMX_ImageFilterNone;
+    image_format.eImageFilter = type ? /*OMX_ImageFilterDeInterlaceLineDouble*/ OMX_ImageFilterDeInterlaceAdvanced : OMX_ImageFilterNone;
     //image_format.eImageFilter = OMX_ImageFilterNone;
-
     //ilclient_change_component_state(omxState->image_fx, OMX_StateLoaded);
+    //image_format.eImageFilter = ((++_type) % 17) | 0x7F000000;
+
 
     if (OMX_SetConfig(ILC_GET_HANDLE(omxState->image_fx), OMX_IndexConfigCommonImageFilterParameters, &image_format) != OMX_ErrorNone)
     {
@@ -209,8 +237,10 @@ int videoSetDeinterlace(omxState_t* omxState, int type)
         return 1;
     }
 
-    fprintf(stderr, "%s() - Info: deinterlation %s\n", __FUNCTION__, type ? "enabled" : "disabled");
+    //fprintf(stderr, "%s() - Info: deinterlation %s\n", __FUNCTION__, type ? "enabled" : "disabled");
     //ilclient_change_component_state(omxState->image_fx, OMX_StateExecuting);
+
+    fprintf(stderr, "%s() - Info: filter type(%d)\n", __FUNCTION__, image_format.eImageFilter);
 
     return 0;
 }

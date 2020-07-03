@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <getopt.h>
 
 #include <libavutil/opt.h>
 
@@ -34,6 +35,8 @@
 #define ALIGN_UP(x,y)  ((x + (y)-1) & ~((y)-1))
 
 
+int parse_args(int argc, char** argv, appData* userData);
+
 int main(int argc, char **argv)
 {
     AVFormatContext *pFormatCtx = NULL;
@@ -47,12 +50,10 @@ int main(int argc, char **argv)
     appData *userData = (appData*) malloc(sizeof(appData));
     memset(userData, 0, sizeof(appData));
 
-    userData->playerState = 0;
-
-    if(argc < 2)
+    if (parse_args(argc, argv, userData) != 0)
     {
-	printf("%s <inFile or stream>\n", argv[0]);
-	return 1;
+        //fprintf(stderr, "%s() - Error: parse_args() failed with retval %d\n", __func__, ret);
+        return 1;
     }
 
 //DEMUXER INIT
@@ -62,34 +63,34 @@ int main(int argc, char **argv)
     av_register_all();
 
     // Open video file
-    if(avformat_open_input(&pFormatCtx, argv[1], NULL, NULL) != 0)
+    if (avformat_open_input(&pFormatCtx, userData->fileName, NULL, NULL) != 0)
     {
-        printf("Error: can't open: %s\n", argv[1]);
+        printf("Error: can't open: %s\n", userData->fileName);
 	return 1;
     }
 
     // Retrieve stream information
-    if(avformat_find_stream_info(pFormatCtx, NULL) < 0)
+    if (avformat_find_stream_info(pFormatCtx, NULL) < 0)
     {
         printf("Error: can't find stream information\n");
 	return 1;
     }
 
     // Dump information about file onto standard error
-    av_dump_format(pFormatCtx, 0, argv[1], 0);
+    av_dump_format(pFormatCtx, 0, userData->fileName, 0);
 //DEMUXER INIT
 
 // Find the first video stream
     videoStream=-1;
-    for(i=0; i < pFormatCtx->nb_streams; i++)
-	if(pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO)
+    for (i=0; i < pFormatCtx->nb_streams; i++)
+	if (pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO)
         {
 	    videoStream=i;
             printf("Video stream index: %d\n",videoStream);
 	    break;
 	}
 
-    if(videoStream == -1)
+    if (videoStream == -1)
     {
         //printf("Can't find video stream\n");
     }
@@ -136,17 +137,17 @@ FF_IDCT_SIMPLENEON     //9.0
 
 // Find the first audio stream
     audioStream=-1;
-    for(i=0; i < pFormatCtx->nb_streams; i++)
-	if(pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO)
+    for (i=0; i < pFormatCtx->nb_streams; i++)
+	if (pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO)
         {
 	    audioStream=i;
             printf("Audio stream index: %d\n",audioStream);
 	    break;
 	}
 
-    if(audioStream==-1)
+    if (audioStream==-1)
     {
-        printf("Can't find audio stream\n");
+        //printf("Can't find audio stream\n");
     }
     else
     {
@@ -157,7 +158,7 @@ FF_IDCT_SIMPLENEON     //9.0
 
         audioCodec = avcodec_find_decoder(userData->audioStream->codec->codec_id);
 
-        if(audioCodec==NULL)
+        if (audioCodec==NULL)
         {
 	    fprintf(stderr, "Unsupported audio codec!\n");
         }
@@ -166,7 +167,7 @@ FF_IDCT_SIMPLENEON     //9.0
             printf("Audio codec: %s\n", audioCodec->name);
 
             // Open codec
-            if(avcodec_open2(userData->audioStream->codec, audioCodec, NULL) < 0)
+            if (avcodec_open2(userData->audioStream->codec, audioCodec, NULL) < 0)
             {
                 printf("Could not open audio codec\n");
             }
@@ -204,15 +205,13 @@ FF_IDCT_SIMPLENEON     //9.0
     int bitdepth = 16;
     int buffer_size = (BUFFER_SIZE_SAMPLES * bitdepth * OUT_CHANNELS(nchannels))>>3;
 
-    //userData->playerState |= STATE_DEINTERLACE;
-
     int ret = omxInit(&userData->omxState,
               userData->playerState & STATE_HAVEVIDEO ? userData->videoStream->codec->width : 32, // width
               userData->playerState & STATE_HAVEVIDEO ? userData->videoStream->codec->height: 16, // height
-              12, userData->playerState & STATE_DEINTERLACE, // numBuff, deint [image_fx]
+              12, (userData->playerState & STATE_FILTERTYPE_MASK)>>STATE_FILTERTYPE_SHIFT, // numBuff, useFilter [image_fx]
               0, 0, 1024, 768, 0, // render canvas: x_off, y_off, width, height, disp_num [video_render]
               userData->playerState & STATE_HAVEAUDIO ? userData->audioStream->codec->sample_rate : 8000,
-              nchannels, bitdepth, 10, buffer_size);  // ,,,num_buffers, [audio_render]
+              nchannels, bitdepth, 12, buffer_size);  // ,,,num_buffers, [audio_render]
 
     if (ret)
     {
@@ -301,13 +300,15 @@ FF_IDCT_SIMPLENEON     //9.0
     stopCpuLoadDetectionThread();
 
     if (userData->playerState & STATE_HAVEAUDIO)
+    {
         pthread_join(userData->audioThreadId, NULL);
+        usleep(500*1000);
+    }
 
     if (userData->playerState & STATE_HAVEVIDEO)
         pthread_join(userData->videoThreadId, NULL);
 
     // Deinit OMX components
-    //usleep(200*1000);
     omxDeinit(userData->omxState);
 
     // Release fifo
@@ -330,3 +331,97 @@ FF_IDCT_SIMPLENEON     //9.0
 
     return 0;
 }
+
+
+
+int parse_args(int argc, char** argv, appData* userData)
+{
+    int ret;
+
+    while (1)
+    {
+        static struct option long_options[] =
+        {
+            {"help",                             no_argument,       0, 'h'},
+            {"deinterlace",                      required_argument, 0, 'd'},
+            {0, 0, 0, 0}
+        };
+
+        /* getopt_long stores the option index here. */
+        int option_index = 0;
+
+        if (argc == 1)  // no argument given
+        {
+            ret = 'h';
+        }
+        else
+        {
+            ret = getopt_long (argc, argv, "", long_options, &option_index);
+
+            /* Detect the end of the options. */
+            if (ret == -1)
+                break;
+        }
+
+
+        switch (ret)
+        {
+            case 'h':
+                print_help:
+                fprintf (stderr, "%s [options] in_file_or_stream\n", argv[0]);
+                fprintf(stderr, "\t--help\n");
+                fprintf(stderr, "\t--deinterlace \e[4mtype\e[0m \n");
+                fprintf(stderr, "\t\t0 - none\n");
+                fprintf(stderr, "\t\t1 - line double\n");
+                fprintf(stderr, "\t\t2 - advanced\n");
+                fprintf(stderr, "\t\t3 - fast\n");
+
+                return 1;
+
+            case 'd':
+                ret = atoi(optarg);
+                if (ret < 0 || ret > 15)
+                {
+                    fprintf(stderr, "%s() - Error: --%s supplied with invalid value(%d)\n", __func__, long_options[option_index].name, ret);
+                    return 1;
+                }
+
+                userData->playerState = (ret<<STATE_FILTERTYPE_SHIFT) & STATE_FILTERTYPE_MASK;
+
+                break;
+
+            case '?':
+                /* getopt_long already printed an error message. */
+                return 1;
+                break;
+
+            default:
+                fprintf (stderr, "%s() - Error: getopt returned unexpected character code %d('%c')\n", __func__, ret, ret);
+                return 1;
+                //abort ();
+        }
+    }
+
+    /* Print any remaining command line arguments (not options). */
+/*
+    if (optind < argc)
+    {
+        fprintf (stderr, "non-option ARGV-elements: ");
+        while (optind < argc)
+            fprintf (stderr, "%s ", argv[optind++]);
+        putchar ('\n');
+        return 1;
+    }
+*/
+    if (optind < argc)  // first remaining command line argument is fileName
+    {
+        userData->fileName = argv[optind];
+    }
+    else
+    {
+        goto print_help;
+    }
+
+    return 0;
+}
+

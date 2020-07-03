@@ -29,6 +29,8 @@ void* handleAudioThread(void *params)
     int buffer_size = (BUFFER_SIZE_SAMPLES * bitdepth * OUT_CHANNELS(nchannels))>>3;
     int filledLen;
 
+    //static int first_packet = 1;
+
     fprintf(stderr, "%s() - Info: audio decoding thread started...\n", __FUNCTION__);
     fprintf(stderr, "%s() - Info: audio buffer size is %d bytes (%d samples) \n", __FUNCTION__, buffer_size, BUFFER_SIZE_SAMPLES);
 
@@ -38,7 +40,6 @@ void* handleAudioThread(void *params)
         return (void*)1;
     }
 
-    //while (avpacket_queue_size(&userData->audioPacketFifo) > 0)
     while (1)
     {
         if (avpacket_queue_get(&userData->audioPacketFifo, &pkt, 1) == 1)
@@ -51,9 +52,9 @@ void* handleAudioThread(void *params)
 
             if (pkt.dts != AV_NOPTS_VALUE)
             {
-                //if (userData->playerState & STATE_HAVEVIDEO) // mozno lepsie ?
-                    //pts = pkt.dts - userData->videoStream->start_time;
-                //else
+                if (userData->playerState & STATE_HAVEVIDEO) // musi byt takto, inak stvX dvbT meskal zvuk
+                    pts = pkt.dts - userData->videoStream->start_time;
+                else
                     pts = pkt.dts - userData->audioStream->start_time;
 
                 pts *= 1000*av_q2d(userData->audioStream->time_base); // pts value in [ms]
@@ -92,17 +93,14 @@ void* handleAudioThread(void *params)
             userData->omxState->audio_buf->nFilledLen = filledLen;
             userData->omxState->audio_buf->nTimeStamp = ToOMXTime(1000*pts);  // set PTS in [us]
 /*
-            //userData->omxState->audio_buf->nTimeStamp = 0;  // set PTS in [us]
-            if (first)
-            {
-                userData->omxState->audio_buf->nFlags = OMX_BUFFERFLAG_STARTTIME;
-                first = 0;
-            }
-            else
-                userData->omxState->audio_buf->nFlags = OMX_BUFFERFLAG_TIME_UNKNOWN;
-            //userData->omxState->audio_buf->nFlags = 0;
-*/
+            userData->omxState->audio_buf->nFlags = OMX_BUFFERFLAG_TIME_UNKNOWN;
 
+            if(first_packet)
+            {
+                userData->omxState->audio_buf->nFlags = OMX_BUFFERFLAG_STARTTIME;  // OMX_BUFFERFLAG_TIME_UNKNOWN
+                first_packet = 0;
+            }
+*/
             while(audioGetLatency(userData->omxState) >
                   (userData->audioStream->codec->sample_rate * (MIN_LATENCY_TIME + CTTW_SLEEP_TIME) / 1000))
                 usleep(CTTW_SLEEP_TIME*1000);

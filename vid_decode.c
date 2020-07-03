@@ -19,6 +19,7 @@ void* handleVideoThread(void *params)
     AVFrame *pFrame;
     AVPacket pkt;
     int frameFinished;
+    int markDeinterlace = 0;
     int64_t pts;
     static int64_t fake_pts=0;
     static int first_packet = 1;
@@ -31,7 +32,13 @@ void* handleVideoThread(void *params)
         return (void*)1;
     }
 
-    //while (avpacket_queue_size(&userData->videoPacketFifo) > 0)
+    if ((userData->playerState & STATE_FILTERTYPE_MASK)>>STATE_FILTERTYPE_SHIFT > 0 &&
+        (userData->playerState & STATE_FILTERTYPE_MASK)>>STATE_FILTERTYPE_SHIFT < 4 )
+    {
+        markDeinterlace = 1;
+        fprintf(stderr, "%s() - Info: marking buffers as interlaced\n", __FUNCTION__);
+    }
+
     while (1)
     {
         if (avpacket_queue_get(&userData->videoPacketFifo, &pkt, 1) == 1)
@@ -76,7 +83,7 @@ void* handleVideoThread(void *params)
             int frameHeight         = ALIGN_UP(userData->videoStream->codec->height, 16);
             int row;
 
-            for(row=0; row<frameHeight; row++)  // insert Y component
+            for(row=0; row<frameHeight; row++)  // insert Y component into omx buffer
             {
                 memcpy(bufferDataPtr, frameDataPtr, frameWidth);
                 bufferDataPtr += renderFrameStride;
@@ -85,7 +92,7 @@ void* handleVideoThread(void *params)
 
             frameDataPtr = pFrame->data[1];
             libavFrameStride = pFrame->linesize[1];
-            for(row=0; row<frameHeight/2; row++)  // insert U component
+            for(row=0; row<frameHeight/2; row++)  // insert U component into omx buffer
             {
                 memcpy(bufferDataPtr, frameDataPtr, frameWidth/2);
                 bufferDataPtr += renderFrameStride/2;
@@ -94,7 +101,7 @@ void* handleVideoThread(void *params)
 
             frameDataPtr = pFrame->data[2];
             libavFrameStride = pFrame->linesize[2];
-            for(row=0; row<frameHeight/2; row++)  // insert V component
+            for(row=0; row<frameHeight/2; row++)  // insert V component into omx buffer
             {
                 memcpy(bufferDataPtr, frameDataPtr, frameWidth/2);
                 bufferDataPtr += renderFrameStride/2;
@@ -103,11 +110,11 @@ void* handleVideoThread(void *params)
 
             userData->omxState->video_buf->nFilledLen = userData->omxState->video_buf->nAllocLen;
             userData->omxState->video_buf->nOffset = 0;
-            userData->omxState->video_buf->nFlags = 0;
-
+            userData->omxState->video_buf->nFlags = markDeinterlace ? (OMX_BUFFERFLAG_INTERLACED | OMX_BUFFERFLAG_TOP_FIELD_FIRST) : 0;
+                                                                     //OMX_BUFFERFLAG_TIME_IS_DTS
             if(first_packet)
             {
-                userData->omxState->video_buf->nFlags = OMX_BUFFERFLAG_STARTTIME;
+                userData->omxState->video_buf->nFlags |= OMX_BUFFERFLAG_STARTTIME;
                 first_packet = 0;
             }
             else
