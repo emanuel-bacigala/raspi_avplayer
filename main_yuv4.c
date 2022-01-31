@@ -28,6 +28,7 @@
 #define	AV_CODEC_FLAG_INTERLACED_ME	(1 << 29)
 #define	AV_CODEC_FLAG_GRAY		(1 << 13)
 
+
 #ifdef ALIGN_UP
     #undef ALIGN_UP
 #endif
