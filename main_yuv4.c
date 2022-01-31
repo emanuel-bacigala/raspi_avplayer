@@ -22,6 +22,7 @@
 #include "control.h"
 #include "appdata.h"
 
+/* pokus */
 
 #define	AV_CODEC_FLAG2_FAST   		(1 << 0)
 #define	AV_CODEC_FLAG_LOW_DELAY		(1 << 19)
