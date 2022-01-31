@@ -77,40 +77,46 @@ void* handleAudioThread(void *params)
 
             filledLen = 4*pFrame->nb_samples;
 
-            audioGetFrame(userData->omxState);
+            uint8_t *bufferPtr = buffer;
 
-            if (filledLen > buffer_size)  // MALO BY PLATIT: buffer_size == userData->omxState->audio_buff->nFilledLen
+            while (filledLen > 0)
             {
-                fprintf(stderr, "%s() - Error: audio buffer overrun dataLen=%d bufferLen=%d\n", __FUNCTION__, filledLen, buffer_size);
-                return (void*)1;
-            }
+                int audioLen = filledLen > buffer_size ? buffer_size : filledLen;
 
-            if (userData->playerState & STATE_MUTE)
-                memset(userData->omxState->audio_buf->pBuffer, 0x00, filledLen);
-            else
-                memcpy(userData->omxState->audio_buf->pBuffer, buffer, filledLen);
+                audioGetFrame(userData->omxState);
+                // MALO BY PLATIT: buffer_size == userData->omxState->audio_buf->nFilledLen
 
-            userData->omxState->audio_buf->nFilledLen = filledLen;
-            userData->omxState->audio_buf->nTimeStamp = ToOMXTime(1000*pts);  // set PTS in [us]
+                if (userData->playerState & STATE_MUTE)
+                    memset(userData->omxState->audio_buf->pBuffer, 0x00, audioLen);
+                else
+                    memcpy(userData->omxState->audio_buf->pBuffer, bufferPtr, audioLen);
+
+                userData->omxState->audio_buf->nFilledLen = audioLen;
+                userData->omxState->audio_buf->nTimeStamp = ToOMXTime(1000*pts);  // set PTS in [us]
 /*
-            userData->omxState->audio_buf->nFlags = OMX_BUFFERFLAG_TIME_UNKNOWN;
+                userData->omxState->audio_buf->nFlags = OMX_BUFFERFLAG_TIME_UNKNOWN;
 
-            if(first_packet)
-            {
-                userData->omxState->audio_buf->nFlags = OMX_BUFFERFLAG_STARTTIME;  // OMX_BUFFERFLAG_TIME_UNKNOWN
-                first_packet = 0;
-            }
+                if(first_packet)
+                {
+                    userData->omxState->audio_buf->nFlags = OMX_BUFFERFLAG_STARTTIME;  // OMX_BUFFERFLAG_TIME_UNKNOWN
+                    first_packet = 0;
+                }
 */
-            while(audioGetLatency(userData->omxState) >
-                  (userData->audioStream->codec->sample_rate * (MIN_LATENCY_TIME + CTTW_SLEEP_TIME) / 1000))
-                usleep(CTTW_SLEEP_TIME*1000);
+                while(audioGetLatency(userData->omxState) >
+                      (userData->audioStream->codec->sample_rate * (MIN_LATENCY_TIME + CTTW_SLEEP_TIME) / 1000))
+                    usleep(CTTW_SLEEP_TIME*1000);
 
-            if (audioPutFrame(userData->omxState) != 0)
-            {
-                fprintf(stderr, "%s() - Error: failed to play audio buffer\n", __FUNCTION__);
-                return (void*)1;
+                if (audioPutFrame(userData->omxState) != 0)
+                {
+                    fprintf(stderr, "%s() - Error: failed to play audio buffer\n", __FUNCTION__);
+                    //return (void*)1;
+                    userData->playerState |= STATE_EXIT;  // set to jump out of audio decoding loop
+                    break;
+                }
+
+                bufferPtr += audioLen;
+                filledLen -= audioLen;
             }
-
             av_free(buffer);
             av_free_packet(&pkt);
         }
@@ -134,5 +140,5 @@ void* handleAudioThread(void *params)
     userData->playerState &= ~STATE_HAVEAUDIO;
     fprintf(stderr, "%s() - Info: audio decoding thread finished\n", __FUNCTION__);
 
-    return 0;
+    return (void*)0;
 }

@@ -53,8 +53,8 @@ int avpacket_queue_put(AVPacketQueue *q, AVPacket *pkt)
 {
     AVPacketList *pkt1;
 
-    // Drop Packet if queue size is > 10 MB
-    if (avpacket_queue_size(q) >  1024 * 1024 * 10)
+    // Drop Packet if queue size is > 20 MB
+    if (avpacket_queue_size(q) >  1024 * 1024 * 20)
     {
         fprintf(stderr,"%s() - Error: input buffer overrun\n", __func__);
         return -1;

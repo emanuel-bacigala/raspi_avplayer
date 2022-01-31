@@ -11,6 +11,7 @@
 #include <libavutil/opt.h>
 
 #include "bcm_host.h"
+#include "omx_video.h"
 #include "omx_audio.h"
 #include "omx_integration.h"
 
@@ -40,10 +41,10 @@ int parse_args(int argc, char** argv, appData* userData);
 int main(int argc, char **argv)
 {
     AVFormatContext *pFormatCtx = NULL;
-    int i, videoStream, audioStream;
     AVCodec *videoCodec = NULL;
     AVCodec *audioCodec = NULL;
     AVPacket packet;
+    int ret, i, videoStream=-1, audioStream=-1;
 
     AVDictionary *optionsDict = NULL;
 
@@ -81,7 +82,6 @@ int main(int argc, char **argv)
 //DEMUXER INIT
 
 // Find the first video stream
-    videoStream=-1;
     for (i=0; i < pFormatCtx->nb_streams; i++)
 	if (pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_VIDEO)
         {
@@ -136,7 +136,6 @@ FF_IDCT_SIMPLENEON     //9.0
 // Find the first video stream
 
 // Find the first audio stream
-    audioStream=-1;
     for (i=0; i < pFormatCtx->nb_streams; i++)
 	if (pFormatCtx->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO)
         {
@@ -152,7 +151,7 @@ FF_IDCT_SIMPLENEON     //9.0
     else
     {
         userData->audioStream = pFormatCtx->streams[audioStream];
-        //userData->audioStream->codec->flags2 |= AV_CODEC_FLAG2_FAST;  //nema vplyv
+        //userData->audioStream->codec->flags2 |= AV_CODEC_FLAG2_FAST;  // nema vplyv
 
         userData->audioStream->codec->idct_algo = FF_IDCT_SIMPLEARMV6;  // FF_IDCT_SIMPLEARMV6 || FF_IDCT_SIMPLENEON
 
@@ -200,20 +199,26 @@ FF_IDCT_SIMPLENEON     //9.0
 
     bcm_host_init();
 
+    if (userData->playerState & STATE_HAVEVIDEO)
+    {
+        displayGetResolution(&userData->omxState);
+        printf("%s() - Info: Screen resolution: %dx%d\n", __FUNCTION__, userData->renderWindow[2], userData->renderWindow[3]);
+    }
+
     // resamplujem na stereo, 16-bit
     int nchannels = 2;
     int bitdepth = 16;
     int buffer_size = (BUFFER_SIZE_SAMPLES * bitdepth * OUT_CHANNELS(nchannels))>>3;
 
-    int ret = omxInit(&userData->omxState,
-              userData->playerState & STATE_HAVEVIDEO ? userData->videoStream->codec->width : 32, // width
-              userData->playerState & STATE_HAVEVIDEO ? userData->videoStream->codec->height: 16, // height
-              12, (userData->playerState & STATE_FILTERTYPE_MASK)>>STATE_FILTERTYPE_SHIFT, // numBuff, useFilter [image_fx]
-              0, 0, 1024, 768, 0, // render canvas: x_off, y_off, width, height, disp_num [video_render]
-              userData->playerState & STATE_HAVEAUDIO ? userData->audioStream->codec->sample_rate : 8000,
-              nchannels, bitdepth, 12, buffer_size);  // ,,,num_buffers, [audio_render]
+    userData->_playerState = userData->playerState;  // save playerState for omxDeinit()
 
-    if (ret)
+    if ((ret = omxInit(&userData->omxState,
+               userData->playerState & STATE_HAVEVIDEO ? userData->videoStream->codec->width : 0, // width
+               userData->playerState & STATE_HAVEVIDEO ? userData->videoStream->codec->height: 0, // height
+               12, (userData->playerState & STATE_FILTERTYPE_MASK)>>STATE_FILTERTYPE_SHIFT, // numBuff, useFilter [image_fx]
+               0, 0, 1024, 768, userData->displayNo, // render canvas: x_off, y_off, width, height, disp_num [video_render]
+               userData->playerState & STATE_HAVEAUDIO ? userData->audioStream->codec->sample_rate : 0,
+               nchannels, bitdepth, 12, buffer_size)) != 0)  // ,,,num_buffers, [audio_render]
     {
         fprintf(stderr, "%s() - Error: omxInit() failed with error %d\n", __FUNCTION__, ret);
 
@@ -261,7 +266,7 @@ FF_IDCT_SIMPLENEON     //9.0
 	    av_free_packet(&packet);
         }
 
-        while (avpacket_queue_size(&userData->videoPacketFifo) > INPUT_QUEUE_SIZE || avpacket_queue_size(&userData->audioPacketFifo) > INPUT_QUEUE_SIZE/2)  // wait if input queue full
+        while (avpacket_queue_size(&userData->videoPacketFifo) > INPUT_QUEUE_SIZE || avpacket_queue_size(&userData->audioPacketFifo) > INPUT_QUEUE_SIZE/16)  // wait if input queue full
         {
             if(checkKeyPress(userData))
                 goto terminatePlayer;
@@ -309,7 +314,9 @@ FF_IDCT_SIMPLENEON     //9.0
         pthread_join(userData->videoThreadId, NULL);
 
     // Deinit OMX components
-    omxDeinit(userData->omxState);
+    omxDeinit(&userData->omxState);
+
+    bcm_host_deinit();
 
     // Release fifo
     avpacket_queue_release(&userData->videoPacketFifo);
@@ -324,8 +331,6 @@ FF_IDCT_SIMPLENEON     //9.0
 
     // Close the video file
     avformat_close_input(&pFormatCtx);
-
-    bcm_host_deinit();
 
     fprintf(stderr, "%s() - Info: player finished\n", __FUNCTION__);
 
@@ -343,7 +348,8 @@ int parse_args(int argc, char** argv, appData* userData)
         static struct option long_options[] =
         {
             {"help",                             no_argument,       0, 'h'},
-            {"deinterlace",                      required_argument, 0, 'd'},
+            {"deinterlace",                      required_argument, 0, 'f'},
+            {"display",                          required_argument, 0, 'd'},
             {0, 0, 0, 0}
         };
 
@@ -375,10 +381,13 @@ int parse_args(int argc, char** argv, appData* userData)
                 fprintf(stderr, "\t\t1 - line double\n");
                 fprintf(stderr, "\t\t2 - advanced\n");
                 fprintf(stderr, "\t\t3 - fast\n");
+                fprintf(stderr, "\t--display \e[4mnum\e[0m \n");
+                fprintf(stderr, "\t\t0 - default\n");
+                fprintf(stderr, "\t\t1-8 - DPI, LCD, HDMI, ...\n");
 
                 return 1;
 
-            case 'd':
+            case 'f':
                 ret = atoi(optarg);
                 if (ret < 0 || ret > 15)
                 {
@@ -387,6 +396,19 @@ int parse_args(int argc, char** argv, appData* userData)
                 }
 
                 userData->playerState = (ret<<STATE_FILTERTYPE_SHIFT) & STATE_FILTERTYPE_MASK;
+
+                break;
+
+            case 'd':
+                ret = atoi(optarg);
+                if (ret < 0 || ret > 8)
+                {
+                    fprintf(stderr, "%s() - Error: --%s supplied with invalid value(%d)\n", __func__, long_options[option_index].name, ret);
+                    return 1;
+                }
+
+                //userData->playerState = (ret<<STATE_DISPLAYNO_SHIFT) & STATE_DISPLAYNO_MASK;
+                userData->displayNo = ret;
 
                 break;
 

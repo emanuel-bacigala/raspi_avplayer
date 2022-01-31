@@ -9,7 +9,7 @@ LDFLAGS+=-L/opt/vc/src/hello_pi/libs/ilclient -lilclient
 LDFLAGS+=-lavcodec -lavutil -lavformat -lavresample
 LDFLAGS+=-lpthread -lm
 
-CFLAGS+=-Wall -O2 -mfloat-abi=hard -fomit-frame-pointer
+CFLAGS+=-Wall -O2 -mfloat-abi=hard -mfpu=vfp -fomit-frame-pointer
 CFLAGS+=-DSTANDALONE -D__STDC_CONSTANT_MACROS -D__STDC_LIMIT_MACROS -DTARGET_POSIX \
         -D_LINUX -fPIC -DPIC -D_REENTRANT -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64 \
         -U_FORTIFY_SOURCE -DHAVE_LIBOPENMAX=2 -DOMX -DOMX_SKIP64BIT -DUSE_EXTERNAL_OMX \

@@ -110,7 +110,11 @@ void* handleVideoThread(void *params)
 
             userData->omxState->video_buf->nFilledLen = userData->omxState->video_buf->nAllocLen;
             userData->omxState->video_buf->nOffset = 0;
+#if (defined(OMX_BUFFERFLAG_INTERLACED) && defined(OMX_BUFFERFLAG_TOP_FIELD_FIRST))
             userData->omxState->video_buf->nFlags = markDeinterlace ? (OMX_BUFFERFLAG_INTERLACED | OMX_BUFFERFLAG_TOP_FIELD_FIRST) : 0;
+#else
+            userData->omxState->video_buf->nFlags = 0;
+#endif
                                                                      //OMX_BUFFERFLAG_TIME_IS_DTS
             if(first_packet)
             {

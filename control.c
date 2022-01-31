@@ -11,6 +11,7 @@
 #define STEP            16
 #define ARROW           0x001b5b00
 #define CTRL_ARROW      0x313b3500
+#define SHIFT_ARROW     0x313b3200
 #define UP      0x41
 #define DOWN    0x42
 #define RIGHT   0x43
@@ -20,12 +21,14 @@
 int checkKeyPress(appData *userData)
 {
     static float scale = 1.0;
-
+    static unsigned int filterType = 0;
     unsigned int key=0;
 
 
     if((key = keyboardRead()) > 0)
     {
+        fprintf(stderr, "%s() - Info: key 0x%08x pressed\n", __FUNCTION__, key);
+
         if (key == 27 || key == 113)
         {
             fprintf(stderr, "%s() - Info: shutting down player \n", __FUNCTION__);
@@ -41,71 +44,85 @@ int checkKeyPress(appData *userData)
             printf("V/A queue %u/%u, CPU %5.2f%%\n", avpacket_queue_size(&userData->videoPacketFifo),
                    avpacket_queue_size(&userData->audioPacketFifo), getCpuLoad());
         }
-/*
-        else if ((key & 0xffffff00) == ARROW && !TEX_VIEW)
+        else if ((key & 0x00ffff00) == ARROW /*&& !TEX_VIEW*/)
         {
-            printf("%s() - Info: render canvas change [%d %d %d %d]", __FUNCTION__,
+            printf("%s() - Info: render canvas move [%d %d %d %d]", __FUNCTION__,
                    userData->renderWindow[0], userData->renderWindow[1],
                    userData->renderWindow[2], userData->renderWindow[3]);
-            if ((key & 0x000000ff) == UP && userData->renderWindow[1] >= STEP)
+            if ((key & 0x000000ff) == UP
+                 //&& userData->renderWindow[1] >= STEP                            // zmiznutie casti canvas-u hore
+                 && userData->renderWindow[1] + userData->renderWindow[3] > STEP // zmiznutie celeho canvas-u hore
+               )
             {
                 userData->renderWindow[1] -= STEP;
             }
-            else if ((key & 0x000000ff) == DOWN && userData->renderWindow[1] < userData->dispInfo->height-STEP &&
-                     userData->renderWindow[1] < userData->renderWindow[3]-STEP)
+            else if ((key & 0x000000ff) == DOWN
+                     //&& userData->renderWindow[1] + userData->renderWindow[3] <= userData->screenHeight-STEP // zmiznutie casti canvas-u
+                     && userData->renderWindow[1] < userData->screenHeight-STEP  // zmiznutie celeho canvas-u
+                    )
             {
                 userData->renderWindow[1] += STEP;
             }
-            else if ((key & 0x000000ff) == LEFT && userData->renderWindow[0] >= STEP)
+            else if ((key & 0x000000ff) == LEFT
+                     //&& userData->renderWindow[0] >= STEP                            // zmiznutie casti canvas-u
+                     && userData->renderWindow[0] + userData->renderWindow[2] > STEP // zmiznutie celeho canvas-u
+                    )
             {
                 userData->renderWindow[0] -= STEP;
             }
-            else if ((key & 0x000000ff) == RIGHT && userData->renderWindow[0] < userData->dispInfo->width-STEP &&
-                     userData->renderWindow[0] < userData->renderWindow[2]-STEP &&
-                     userData->renderWindow[0] < userData->renderWindow[2]-32)  // min. YUV resource width is 32
+            else if ((key & 0x000000ff) == RIGHT
+                     //&& userData->renderWindow[0] + userData->renderWindow[2] <= userData->screenWidth-STEP  // zmiznutie celeho canvas-u
+                     && userData->renderWindow[0] < userData->screenWidth-STEP  // zmiznutie celeho canvas-u
+                    )
             {
                 userData->renderWindow[0] += STEP;
             }
 
             printf(" -> [%d %d %d %d]\n", userData->renderWindow[0], userData->renderWindow[1],
                                         userData->renderWindow[2], userData->renderWindow[3]);
-            texturerChangeElement(userData->tex4, userData->renderWindow[0], userData->renderWindow[1],
-                                                  userData->renderWindow[2] - userData->renderWindow[0],
-                                                  userData->renderWindow[3] - userData->renderWindow[1]);
+
+            videoSetDislpayRegion(userData->omxState, userData->renderWindow[0], userData->renderWindow[1],
+                                                      userData->renderWindow[2], userData->renderWindow[3]);
         }
-        else if ((key & 0xffffff00) == CTRL_ARROW && !TEX_VIEW)
+        else if ((key & 0xffffff00) == SHIFT_ARROW /*&& !TEX_VIEW*/)
         {
-            printf("%s() - Info: render canvas change [%d %d %d %d]", __FUNCTION__,
+            printf("%s() - Info: render canvas size change [%d %d %d %d]", __FUNCTION__,
                    userData->renderWindow[0], userData->renderWindow[1],
                    userData->renderWindow[2], userData->renderWindow[3]);
 
-            if ((key & 0x000000ff) == UP && userData->renderWindow[3] > STEP &&
-                 userData->renderWindow[3]-STEP > userData->renderWindow[1])
+            if ((key & 0x000000ff) == UP
+                && userData->renderWindow[3] > 32  // min. velkost je 32
+                && userData->renderWindow[1] + userData->renderWindow[3] > STEP // zmiznutie
+                )
             {
                 userData->renderWindow[3] -= STEP;
             }
-            else if ((key & 0x000000ff) == DOWN && userData->renderWindow[3] <= userData->dispInfo->height-STEP)
+            else if ((key & 0x000000ff) == DOWN
+                     //&& userData->renderWindow[1] + userData->renderWindow[3] <= userData->screenHeight-STEP  // pretecenie za okraj
+                    )
             {
                 userData->renderWindow[3] += STEP;
             }
-            else if ((key & 0x000000ff) == LEFT && userData->renderWindow[2] > STEP &&
-                     userData->renderWindow[2]-STEP > userData->renderWindow[0] &&
-                     userData->renderWindow[2]-32   > userData->renderWindow[0])  // min. YUV resource width is 32
+            else if ((key & 0x000000ff) == LEFT
+                     && userData->renderWindow[2] > 32  // min. velkost je 32
+                     && userData->renderWindow[0] + userData->renderWindow[2] > STEP  // zmiznutie
+                    )
             {
                 userData->renderWindow[2] -= STEP;
             }
-            else if ((key & 0x000000ff) == RIGHT && userData->renderWindow[2] <= userData->dispInfo->width-STEP)
+            else if ((key & 0x000000ff) == RIGHT
+                     //&& userData->renderWindow[0] + userData->renderWindow[2] <= userData->screenWidth-STEP  // pretecenie za okraj
+                    )
             {
                 userData->renderWindow[2] += STEP;
             }
 
             printf(" -> [%d %d %d %d]\n", userData->renderWindow[0], userData->renderWindow[1],
                                         userData->renderWindow[2], userData->renderWindow[3]);
-            texturerChangeElement(userData->tex4, userData->renderWindow[0], userData->renderWindow[1],
-                                                  userData->renderWindow[2] - userData->renderWindow[0],
-                                                  userData->renderWindow[3] - userData->renderWindow[1]);
+
+            videoSetDislpayRegion(userData->omxState, userData->renderWindow[0], userData->renderWindow[1],
+                                                      userData->renderWindow[2], userData->renderWindow[3]);
         }
-*/
         else if (key == 32 )  // space key
         {
             if (userData->playerState & STATE_PAUSED)
@@ -125,7 +142,7 @@ int checkKeyPress(appData *userData)
         }
         else if (key == 0x2d )  // - key
         {
-            scale -= 0.1;
+            if (scale > 0.0) scale -= 0.1;
             clockSetScale(userData->omxState, scale);
             printf("%s() - Info: time scale set to %3.2f\n", __FUNCTION__, scale);
             userData->playerState &= ~STATE_PAUSED;
@@ -176,16 +193,14 @@ int checkKeyPress(appData *userData)
                 fprintf(stderr, "%s() - Info: audio off\n", __FUNCTION__);
             }
         }
-/*
         else if (key == 'D')
         {
-            videoSetDeinterlace(userData->omxState, 1);
+            videoSetDeinterlace(userData->omxState, ++filterType % 27);
         }
         else if (key == 'd')
         {
-            videoSetDeinterlace(userData->omxState, 0);
+            videoSetDeinterlace(userData->omxState, --filterType % 27);
         }
-*/
     }
 
     return 0;

@@ -33,6 +33,6 @@ int omxInit(omxState_t** handle,
             uint32_t frame_width, uint32_t frame_height, uint32_t num_video_buffers, uint32_t use_deinterlace,  // image_fx
             uint32_t x_offset, uint32_t y_offset, uint32_t width, uint32_t height, uint32_t disp_num,           // video_render
             uint32_t freq, uint32_t channels, uint32_t bits, uint32_t num_audio_buffers, uint32_t buffer_size); // audio_render
-int omxDeinit(omxState_t* omxState);
+int omxDeinit(omxState_t** _omxState);
 
 #endif
