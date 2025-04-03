@@ -29,6 +29,7 @@ For now the following hot-keys are supported:
     m               - mute | unmute audio
     +               - increase play speed
     -               - decrease play speed
-
+    arrows          - move render canvas
+    shift+arrows    - resize render canvas
 
 

@@ -1,4 +1,5 @@
 #include "appdata.h"
+#include "libavutil/pixdesc.h"
 #include "omx_video.h"
 
 
@@ -11,11 +12,11 @@ static OMX_TICKS ToOMXTime(int64_t pts)
 }
 
 
-
 void* handleVideoThread(void *params)
 {
     appData *userData = (appData*)params;
     AVCodecContext *pCodecCtx = userData->videoStream->codec;
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(pCodecCtx->pix_fmt);
     AVFrame *pFrame;
     AVPacket pkt;
     int frameFinished;
@@ -43,7 +44,7 @@ void* handleVideoThread(void *params)
     {
         if (avpacket_queue_get(&userData->videoPacketFifo, &pkt, 1) == 1)
         {
-            if ( avcodec_decode_video2(pCodecCtx, pFrame, &frameFinished, &pkt) < 0  || !frameFinished )
+            if (avcodec_decode_video2(pCodecCtx, pFrame, &frameFinished, &pkt) < 0 || !frameFinished)
             {
                 av_free_packet(&pkt);
                 continue;
@@ -69,43 +70,34 @@ void* handleVideoThread(void *params)
                 fprintf(stderr, "\tY  component address %p pitch %d\n", (void*)pFrame->data[0], pFrame->linesize[0]);
                 fprintf(stderr, "\tCb component address %p pitch %d\n", (void*)pFrame->data[1], pFrame->linesize[1]);
                 fprintf(stderr, "\tCr component address %p pitch %d\n", (void*)pFrame->data[2], pFrame->linesize[2]);
-// TREBA POUZIVAT ALIGN_UP ???
-                fprintf(stderr, "\tAligned video size: %dx%d\n", pFrame->linesize[0], ALIGN_UP(userData->videoStream->codec->height,16));
+                fprintf(stderr, "\tAligned lumma  size: %dx%d\n", pFrame->linesize[0], ALIGN_UP(userData->videoStream->codec->height,16));
+                fprintf(stderr, "\tAligned chroma size: %dx%d\n", pFrame->width >> desc->log2_chroma_w, pFrame->height >> desc->log2_chroma_h);
+                fprintf(stderr, "%s() - Info: using %d decoding thread(s)\n", __FUNCTION__, pCodecCtx->thread_count);
             }
 
             videoGetFrame(userData->omxState);
 
-            uint8_t* bufferDataPtr  = userData->omxState->video_buf->pBuffer;
-            int renderFrameStride   = ALIGN_UP(userData->videoStream->codec->width, 32);
-            uint8_t* frameDataPtr   = pFrame->data[0];
-            int libavFrameStride    = pFrame->linesize[0];
-            int frameWidth          = userData->videoStream->codec->width;
-            int frameHeight         = ALIGN_UP(userData->videoStream->codec->height, 16);
+            uint8_t* bufferDataPtr = userData->omxState->video_buf->pBuffer;
+            int omxFrameStride     = ALIGN_UP(pFrame->width, 32);
+            int omxFrameHeight     = ALIGN_UP(pFrame->height, 16);
+            int omxUVPlanesOffset  = (omxFrameHeight/2)*(omxFrameStride >> 1);
+            uint8_t* yFrameDataPtr = pFrame->data[0];
+            uint8_t* uFrameDataPtr = pFrame->data[1];
+            uint8_t* vFrameDataPtr = pFrame->data[2];
             int row;
 
-            for(row=0; row<frameHeight; row++)  // insert Y component into omx buffer
-            {
-                memcpy(bufferDataPtr, frameDataPtr, frameWidth);
-                bufferDataPtr += renderFrameStride;
-                frameDataPtr  += libavFrameStride;
+            for(row = 0; row < omxFrameHeight; row++) { // insert Y component into omx buffer
+                memcpy(bufferDataPtr, yFrameDataPtr, pFrame->width);
+                bufferDataPtr += omxFrameStride;
+                yFrameDataPtr  += pFrame->linesize[0];
             }
 
-            frameDataPtr = pFrame->data[1];
-            libavFrameStride = pFrame->linesize[1];
-            for(row=0; row<frameHeight/2; row++)  // insert U component into omx buffer
-            {
-                memcpy(bufferDataPtr, frameDataPtr, frameWidth/2);
-                bufferDataPtr += renderFrameStride/2;
-                frameDataPtr  += libavFrameStride;
-            }
-
-            frameDataPtr = pFrame->data[2];
-            libavFrameStride = pFrame->linesize[2];
-            for(row=0; row<frameHeight/2; row++)  // insert V component into omx buffer
-            {
-                memcpy(bufferDataPtr, frameDataPtr, frameWidth/2);
-                bufferDataPtr += renderFrameStride/2;
-                frameDataPtr  += libavFrameStride;
+            for(row = 0; row < omxFrameHeight/2; row++) { // insert U&V components into omx buffer
+                memcpy(bufferDataPtr,                     uFrameDataPtr, pFrame->width >> desc->log2_chroma_w);
+                memcpy(bufferDataPtr + omxUVPlanesOffset, vFrameDataPtr, pFrame->width >> desc->log2_chroma_w);
+                bufferDataPtr += omxFrameStride >> 1;
+                uFrameDataPtr += pFrame->linesize[0] >> desc->log2_chroma_h;
+                vFrameDataPtr += pFrame->linesize[0] >> desc->log2_chroma_h;
             }
 
             userData->omxState->video_buf->nFilledLen = userData->omxState->video_buf->nAllocLen;

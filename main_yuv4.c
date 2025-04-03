@@ -110,6 +110,9 @@ FF_IDCT_SIMPLENEON     //9.0
         //userData->videoStream->codec->flags |= (AV_CODEC_FLAG_INTERLACED_DCT | AV_CODEC_FLAG_INTERLACED_ME | AV_CODEC_FLAG_GRAY);
         //userData->videoStream->codec->flags |= (AV_CODEC_FLAG_LOW_DELAY); |// AV_CODEC_FLAG_INTERLACED_DCT); //| AV_CODEC_FLAG_INTERLACED_ME);  // AV_CODEC_FLAG_GRAY 
 
+        // must be set to 0 with avcodec >=58 otherwise it will use just 1 thread (not needed with avcodec 56)
+        userData->videoStream->codec->thread_count = 0;
+
         // Find the decoder for the video stream
         videoCodec = avcodec_find_decoder(userData->videoStream->codec->codec_id);
 
